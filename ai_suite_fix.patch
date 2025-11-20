@@ -1,0 +1,111 @@
+--- Dockerfile
++++ Dockerfile
+@@ -14,7 +14,7 @@
+ RUN /install_invokeai.sh && rm /install_invokeai.sh
+ 
+ # Copy InvokeAI config file
+-COPY invokeai/invokeai.yaml /InvokeAI/
++COPY invokeai/invokeai.yaml /workspace/InvokeAI/
+ 
+ # Stage 3: Kohya_ss Installation
+ FROM invokeai-install AS kohya-install
+@@ -25,7 +25,7 @@
+ COPY kohya_ss/requirements* ./
+ COPY --chmod=755 build/install_kohya.sh ./
+ RUN /install_kohya.sh && rm /install_kohya.sh
+-COPY --chmod=755 kohya_ss/gui.sh ./kohya_ss/gui.sh
++COPY --chmod=755 kohya_ss/gui.sh /workspace/kohya_ss/gui.sh
+ 
+ # Copy the accelerate configuration
+ COPY kohya_ss/accelerate.yaml ./
+@@ -36,7 +36,7 @@
+ WORKDIR /
+ COPY --chmod=755 build/install_comfyui.sh ./
+ RUN /install_comfyui.sh && rm /install_comfyui.sh
+ 
+ # Copy ComfyUI Extra Model Paths (to share models with A1111)
+-COPY comfyui/extra_model_paths.yaml /ComfyUI/
++COPY comfyui/extra_model_paths.yaml /workspace/ComfyUI/extra_model_paths.yaml
+ 
+ # Stage 5: Tensorboard Installation
+ FROM comfyui-install AS tensorboard-install
+--- scripts/start_invokeai.sh
++++ scripts/start_invokeai.sh
+@@ -2,7 +2,7 @@
+ export PYTHONUNBUFFERED=1
+ echo "INVOKEAI: Starting InvokeAI"
+ cd /workspace/InvokeAI
+-source /venvs/invokeai/bin/activate
++source /workspace/venvs/invokeai/bin/activate
+ nohup invokeai-web --root /workspace/InvokeAI > /workspace/logs/invokeai.log 2>&1 &
+ echo "INVOKEAI: InvokeAI started"
+ echo "INVOKEAI: Log file: /workspace/logs/invokeai.log"
+--- scripts/start_kohya.sh
++++ scripts/start_kohya.sh
+@@ -3,7 +3,7 @@
+ echo "KOHYA_SS: Starting Kohya_ss Web UI"
+ cd /workspace/kohya_ss
+ export HF_HOME="/workspace"
+ export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu"
+-source /venvs/kohya_ss/bin/activate
++source /workspace/venvs/kohya_ss/bin/activate
+ nohup ./gui.sh --listen 0.0.0.0 --server_port 3011 --headless > /workspace/logs/kohya_ss.log 2>&1 &
+ echo "KOHYA_SS: Kohya_ss started"
+ echo "KOHYA_SS: Log file: /workspace/logs/kohya_ss.log"
+--- scripts/start_comfyui.sh
++++ scripts/start_comfyui.sh
+@@ -2,7 +2,7 @@
+ export PYTHONUNBUFFERED=1
+ echo "COMFYUI: Starting ComfyUI"
+ cd /workspace/ComfyUI
+-source venv/bin/activate
++source /workspace/venvs/comfyui/bin/activate
+ TCMALLOC="$(ldconfig -p | grep -Po "libtcmalloc.so.\d" | head -n 1)"
+ export LD_PRELOAD="${TCMALLOC}"
+ python3 main.py --listen 0.0.0.0 --port 3021 > /workspace/logs/comfyui.log 2>&1 &
+--- scripts/start_tensorboard.sh
++++ scripts/start_tensorboard.sh
+@@ -2,7 +2,13 @@
+ export PYTHONUNBUFFERED=1
+ echo "TENSORBOARD: Starting Tensorboard"
+ cd /workspace
++VENV_DIR="/workspace/venvs/tensorboard"
++if [ -d "$VENV_DIR" ]; then
++    source "$VENV_DIR/bin/activate"
++fi
++
+ mkdir -p /workspace/logs/ti
+ mkdir -p /workspace/logs/dreambooth
+ 
+--- scripts/pre_start.sh
++++ scripts/pre_start.sh
+@@ -68,17 +68,11 @@
+         # Start the timer
+         start_time=$(date +%s)
+ 
+-        echo "SYNC: Sync 1 of 5"
++        echo "SYNC: Sync 1 of 2"
+         sync_directory "/venv" "${VENV_PATH}"
+-        echo "SYNC: Sync 2 of 5"
++        echo "SYNC: Sync 2 of 2"
+         sync_directory "/${APP}" "/workspace/${APP}"
+-        echo "SYNC: Sync 3 of 5"
+-        sync_directory "/kohya_ss" "/workspace/kohya_ss"
+-        echo "SYNC: Sync 4 of 5"
+-        sync_directory "/ComfyUI" "/workspace/ComfyUI"
+-        echo "SYNC: Sync 5 of 5"
+-        sync_directory "/InvokeAI" "/workspace/InvokeAI"
+         save_template_json
+         echo "${VENV_PATH}" > "/workspace/${APP}/venv_path"
+@@ -97,11 +91,8 @@
+         echo "SYNC: Time taken: %d minutes, %d seconds\n" ${minutes} ${seconds}
+     fi
+ }
+-
+ fix_venvs() {
+     echo "VENV: Fixing A1111 Web UI venv..."
+     /fix_venv.sh /venv ${VENV_PATH}
+-
+-    echo "VENV: Fixing ComfyUI venv..."
+-    /fix_venv.sh /ComfyUI/venv /workspace/ComfyUI/venv
+ }
